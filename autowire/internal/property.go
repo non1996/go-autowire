@@ -1,4 +1,4 @@
-package autowire
+package internal
 
 import (
 	"fmt"

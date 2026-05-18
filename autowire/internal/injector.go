@@ -1,28 +1,32 @@
-package autowire
+package internal
+
+import (
+	"reflect"
+)
 
 // Injector 注入器
 // 注意：不管组件是以值类型注册还是以指针类型注册，泛型参数 C 都是组件的值类型
-type Injector[C any] interface {
-	inject(*AppContext, *C)
+type Injector interface {
+	inject(*AppContext, any)
 }
 
 // ComponentInjector 组件注入器
 // 注意：
 // * 不管组件是以值类型注册还是以指针类型注册，泛型参数 C 都是组件的值类型
 // * D 是被依赖组件的类型，可能是指针
-type ComponentInjector[C any, D any] struct {
+type ComponentInjector struct {
 	Qualifier string
 	Required  bool
-	InjectFn  func(*C, D)
+	InjectFn  func(any, any)
+	DepType   reflect.Type
 }
 
-func (f ComponentInjector[C, D]) inject(ctx *AppContext, comp *C) {
-	var dep D
-
+func (f ComponentInjector) inject(ctx *AppContext, comp any) {
+	var dep any
 	if f.Qualifier != "" {
-		dep = GetComponentByName[D](ctx, f.Qualifier, f.Required)
+		dep = ctx.GetComponentByName(f.Qualifier, f.Required)
 	} else {
-		dep = GetComponent[D](ctx, f.Required)
+		dep = ctx.GetComponent(f.DepType, f.Required)
 	}
 
 	f.InjectFn(comp, dep)

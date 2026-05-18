@@ -1,4 +1,4 @@
-package autowire
+package util
 
 import (
 	"fmt"
@@ -15,12 +15,13 @@ func TypeOf[T any]() Type {
 	return reflect.TypeOf((*T)(nil)).Elem()
 }
 
-func getTypeName[T any]() string {
-	return getTypeNameT(TypeOf[T]())
+// GetTypeName 获取类型名称
+func GetTypeName[T any]() string {
+	return GetTypeNameT(TypeOf[T]())
 }
 
-// 如果是指针类型，持续解引用，直到得到底层值类型
-func getTypeNameT(typ Type) string {
+// GetTypeNameT 如果是指针类型，持续解引用，直到得到底层值类型
+func GetTypeNameT(typ Type) string {
 	for typ.Kind() == reflect.Ptr {
 		typ = typ.Elem()
 	}
@@ -32,15 +33,20 @@ func getTypeNameT(typ Type) string {
 	return fmt.Sprintf("%s.%s", typ.PkgPath(), typ.Name())
 }
 
-func SetValue[T any](receiver *T, v any) {
-	reflect.ValueOf(receiver).Elem().Set(reflect.ValueOf(v))
+func MapContainsKey[K comparable, V any](m map[K]V, k K) bool {
+	_, exist := m[k]
+	return exist
 }
 
-func required(r []bool) bool {
-	return len(r) == 0 || r[0]
+// Ternary 三元表达式
+func Ternary[T any](cond bool, v1, v2 T) T {
+	if cond {
+		return v1
+	}
+	return v2
 }
 
-func cast[T any](v any) T {
+func Cast[T any](v any) T {
 	if reflect2.IsNil(v) {
 		return function.Zero[T]()
 	}
@@ -48,7 +54,7 @@ func cast[T any](v any) T {
 	v2, ok := v.(T)
 	if !ok {
 		panic(fmt.Errorf("type cast failed, source type [%T] destination type [%s] are not compatible",
-			v, getTypeName[T]()))
+			v, GetTypeName[T]()))
 	}
 
 	return v2

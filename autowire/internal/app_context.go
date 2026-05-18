@@ -1,31 +1,36 @@
-package autowire
+package internal
 
 import (
 	"fmt"
 )
 
 type AppContext struct {
-	components           components
+	components           ComponentContainer
 	properties           properties
 	environmentVariables environmentVariables
 }
 
 func NewAppContext() *AppContext {
 	return &AppContext{
-		components:           newComponents(),
+		components:           NewContainer(),
 		properties:           newProperties(),
 		environmentVariables: newEnvironmentVariables(),
 	}
 }
 
-func (ctx *AppContext) Inject(appFactory Factory) any {
+func (ctx *AppContext) Register(factory IComponentFactory) any {
+	ctx.components.Register(factory)
+	return struct{}{}
+}
+
+func (ctx *AppContext) Inject(appFactory IComponentFactory) any {
 	return appFactory.build(ctx)
 }
 
-func (ctx *AppContext) getComponent(typ Type, require ...bool) any {
+func (ctx *AppContext) GetComponent(typ Type, require ...bool) any {
 	typeName := getTypeNameT(typ)
 
-	comps := ctx.components.listByTypeName(typeName)
+	comps := ctx.components.ListByTypeName(typeName)
 	if len(comps) == 0 && required(require) {
 		panic(errComponentNotFound(typeName))
 	}
@@ -34,14 +39,14 @@ func (ctx *AppContext) getComponent(typ Type, require ...bool) any {
 	}
 
 	var (
-		primary      *component
-		otherMatches []*component
+		primary      *ContainerNode
+		otherMatches []*ContainerNode
 	)
 
 	for _, comp := range comps {
-		if comp.factory.isPrimary() {
+		if comp.factory.IsPrimary() {
 			primary = comp
-		} else if ctx.match(comp.factory.condition()) {
+		} else if ctx.match(comp.factory.GetCondition()) {
 			otherMatches = append(otherMatches, comp)
 		}
 	}
@@ -65,8 +70,8 @@ func (ctx *AppContext) getComponent(typ Type, require ...bool) any {
 	return nil
 }
 
-func (ctx *AppContext) getComponentByName(name string, require ...bool) any {
-	comp := ctx.components.getByName(name)
+func (ctx *AppContext) GetComponentByName(name string, require ...bool) any {
+	comp := ctx.components.GetByAlias(name)
 	if comp == nil && required(require) {
 		panic(errComponentNotFound(name))
 	}
@@ -88,7 +93,7 @@ func (ctx *AppContext) match(cond *Condition) bool {
 	return exist && cond.Value == s
 }
 
-func (ctx *AppContext) getInstance(component *component) any {
+func (ctx *AppContext) getInstance(component *ContainerNode) any {
 	if component.instance == nil {
 		component.instance = component.factory.build(ctx)
 	}

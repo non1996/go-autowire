@@ -1,11 +1,11 @@
-package autowire
+package internal
 
 import (
 	"fmt"
 )
 
 var (
-	errMultiMatch = fmt.Errorf("multiple components meet filter condition and no instance was designated as primary")
+	errMultiMatch = fmt.Errorf("multiple ComponentContainer meet filter GetCondition and no instance was designated as primary")
 )
 
 func errComponentNotFound(typeName string) error {
