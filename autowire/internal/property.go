@@ -42,6 +42,7 @@ func (p *properties) get(scope, key string) (any, bool) {
 
 	if reflect2.IsNil(provider.instance) {
 		provider.instance = provider.provide()
+		p.scopes[scope] = provider
 		kvs := objToKvPairs(provider.instance)
 
 		for _, kv := range kvs {

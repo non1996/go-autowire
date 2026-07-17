@@ -34,25 +34,30 @@ func (ctx *AppContext) GetComponent(typ Type, require ...bool) any {
 	if len(comps) == 0 && required(require) {
 		panic(errComponentNotFound(typeName))
 	}
-	if len(comps) == 1 {
-		return ctx.getInstance(comps[0])
-	}
 
 	var (
-		primary      *ContainerNode
-		otherMatches []*ContainerNode
+		primaryMatches []*ContainerNode
+		otherMatches   []*ContainerNode
 	)
 
 	for _, comp := range comps {
+		if !ctx.match(comp.factory.GetCondition()) {
+			continue
+		}
+
 		if comp.factory.IsPrimary() {
-			primary = comp
-		} else if ctx.match(comp.factory.GetCondition()) {
+			primaryMatches = append(primaryMatches, comp)
+		} else {
 			otherMatches = append(otherMatches, comp)
 		}
 	}
 
-	if primary != nil {
-		return ctx.getInstance(primary)
+	if len(primaryMatches) == 1 {
+		return ctx.getInstance(primaryMatches[0])
+	}
+
+	if len(primaryMatches) > 1 {
+		panic(errMultiPrimaryMatch(typeName))
 	}
 
 	if len(otherMatches) == 1 {
@@ -75,13 +80,16 @@ func (ctx *AppContext) GetComponentByName(name string, require ...bool) any {
 	if comp == nil && required(require) {
 		panic(errComponentNotFound(name))
 	}
+	if comp == nil {
+		return nil
+	}
 
 	return ctx.getInstance(comp)
 }
 
 func (ctx *AppContext) match(cond *Condition) bool {
 	if cond == nil {
-		return false
+		return true
 	}
 
 	v, exist := ctx.properties.get(cond.Scope, cond.Key)
@@ -94,8 +102,18 @@ func (ctx *AppContext) match(cond *Condition) bool {
 }
 
 func (ctx *AppContext) getInstance(component *ContainerNode) any {
+	if component == nil {
+		return nil
+	}
+
 	if component.instance == nil {
+		if component.building {
+			panic(errCircularDependency(component.factory.GetAlias()))
+		}
+
+		component.building = true
 		component.instance = component.factory.build(ctx)
+		component.building = false
 	}
 
 	return component.instance

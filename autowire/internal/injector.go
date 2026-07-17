@@ -40,13 +40,13 @@ type ValueInjector[C any] struct {
 	InjectFn func(*C, any)
 }
 
-func (i ValueInjector[C]) inject(ctx *AppContext, comp *C) {
+func (i ValueInjector[C]) inject(ctx *AppContext, comp any) {
 	value, exist := ctx.properties.get(i.Scope, i.Key)
 	if !exist && i.Required {
 		panic(errValueNotFound(i.Scope, i.Key))
 	}
 
-	i.InjectFn(comp, value)
+	i.InjectFn(comp.(*C), value)
 }
 
 // EnvInjector 环境变量注入器
@@ -57,7 +57,7 @@ type EnvInjector[C any] struct {
 	InjectFn     func(*C, string)
 }
 
-func (i EnvInjector[C]) inject(ctx *AppContext, comp *C) {
+func (i EnvInjector[C]) inject(ctx *AppContext, comp any) {
 	ev := ctx.environmentVariables.get(i.Key, i.DefaultValue, i.Required)
-	i.InjectFn(comp, ev)
+	i.InjectFn(comp.(*C), ev)
 }

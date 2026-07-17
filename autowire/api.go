@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"unsafe"
 
 	"github.com/non1996/go-autowire/autowire/internal"
@@ -70,9 +71,7 @@ func (f *ComponentFactoryBuilder[C]) Implement(types ...reflect.Type) *Component
 }
 
 func (f *ComponentFactoryBuilder[C]) Condition(expression string) *ComponentFactoryBuilder[C] {
-	f.condition = &internal.Condition{
-		Expression: expression,
-	}
+	f.condition = parseCondition(expression)
 	return f
 }
 
@@ -147,6 +146,7 @@ func parseFieldTag(field reflect.StructField) (tag autowireTag) {
 	}
 
 	tag.autowire = true
+	tag.required = true
 
 	qualifier, exist := rawTag.Lookup("qualifier")
 	if exist && qualifier != "" {
@@ -161,6 +161,44 @@ func parseFieldTag(field reflect.StructField) (tag autowireTag) {
 	return tag
 }
 
+func parseCondition(expression string) *internal.Condition {
+	expression = strings.TrimSpace(expression)
+	if expression == "" {
+		panic(fmt.Errorf("[autowire] condition expression is empty"))
+	}
+
+	idx := strings.Index(expression, "=")
+	if idx <= 0 || idx == len(expression)-1 {
+		panic(fmt.Errorf("[autowire] invalid condition expression: %s", expression))
+	}
+
+	path := strings.TrimSpace(expression[:idx])
+	value := strings.TrimSpace(expression[idx+1:])
+	if path == "" || value == "" {
+		panic(fmt.Errorf("[autowire] invalid condition expression: %s", expression))
+	}
+
+	var scope, key string
+	if slash := strings.Index(path, "/"); slash > 0 && slash < len(path)-1 {
+		scope = strings.TrimSpace(path[:slash])
+		key = strings.TrimSpace(path[slash+1:])
+	} else if dot := strings.Index(path, "."); dot > 0 && dot < len(path)-1 {
+		scope = strings.TrimSpace(path[:dot])
+		key = strings.TrimSpace(path[dot+1:])
+	}
+
+	if scope == "" || key == "" {
+		panic(fmt.Errorf("[autowire] invalid condition expression: %s", expression))
+	}
+
+	return &internal.Condition{
+		Expression: expression,
+		Scope:      scope,
+		Key:        key,
+		Value:      value,
+	}
+}
+
 func GetPtrUnExportField(s any, fieldName string) reflect.Value {
 	v := reflect.ValueOf(s).Elem().FieldByName(fieldName)
 	return reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
@@ -168,7 +206,21 @@ func GetPtrUnExportField(s any, fieldName string) reflect.Value {
 
 func SetPtrUnExportField(s any, fieldName string, val any) {
 	v := GetPtrUnExportField(s, fieldName)
-	rv := reflect.ValueOf(val)
+	if val == nil {
+		v.Set(reflect.Zero(v.Type()))
+		return
+	}
 
-	v.Set(rv)
+	rv := reflect.ValueOf(val)
+	if rv.Type().AssignableTo(v.Type()) {
+		v.Set(rv)
+		return
+	}
+
+	if rv.Type().ConvertibleTo(v.Type()) {
+		v.Set(rv.Convert(v.Type()))
+		return
+	}
+
+	panic(fmt.Errorf("[autowire] field [%s] cannot assign value type [%s] to [%s]", fieldName, rv.Type(), v.Type()))
 }

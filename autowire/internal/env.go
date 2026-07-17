@@ -22,7 +22,7 @@ func (e *environmentVariables) get(name string, defaultValue string, require ...
 
 	ev, exist := os.LookupEnv(name)
 	if !exist && required(require) {
-		panic(errEnvNotFound("name"))
+		panic(errEnvNotFound(name))
 	}
 
 	if exist {

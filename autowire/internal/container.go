@@ -12,6 +12,7 @@ import (
 type ContainerNode struct {
 	factory  IComponentFactory
 	instance any
+	building bool
 }
 
 // ComponentContainer 组件容器

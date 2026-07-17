@@ -77,7 +77,6 @@ func (f StructFactory) build(appCtx *AppContext) any {
 
 	// 返回实例
 	instance := component.Interface()
-	fmt.Printf("%s %+v\n", component.Type(), instance)
 	return instance
 }
 
