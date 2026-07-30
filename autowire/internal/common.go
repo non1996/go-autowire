@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"unsafe"
 
+	"github.com/bytedance/gg/gvalue"
 	"github.com/modern-go/reflect2"
-	"github.com/non1996/go-jsonobj/function"
 )
 
 type Type = reflect.Type
@@ -55,7 +55,7 @@ func required(r []bool) bool {
 
 func cast[T any](v any) T {
 	if reflect2.IsNil(v) {
-		return function.Zero[T]()
+		return gvalue.Zero[T]()
 	}
 
 	v2, ok := v.(T)

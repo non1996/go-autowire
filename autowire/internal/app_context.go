@@ -2,12 +2,33 @@ package internal
 
 import (
 	"fmt"
+	"sync"
 )
+
+type buildState struct {
+	building map[*ContainerNode]struct{}
+}
+
+func (s *buildState) enter(component *ContainerNode) {
+	if s.building == nil {
+		s.building = make(map[*ContainerNode]struct{})
+	}
+	if _, exists := s.building[component]; exists {
+		panic(errCircularDependency(component.factory.GetAlias()))
+	}
+	s.building[component] = struct{}{}
+}
+
+func (s *buildState) leave(component *ContainerNode) {
+	delete(s.building, component)
+}
 
 type AppContext struct {
 	components           ComponentContainer
 	properties           properties
 	environmentVariables environmentVariables
+	stateMu              sync.RWMutex
+	buildMu              sync.Mutex
 }
 
 func NewAppContext() *AppContext {
@@ -19,19 +40,38 @@ func NewAppContext() *AppContext {
 }
 
 func (ctx *AppContext) Register(factory IComponentFactory) any {
-	ctx.components.Register(factory)
+	ctx.stateMu.Lock()
+	defer ctx.stateMu.Unlock()
+
+	ctx.register(factory)
 	return struct{}{}
 }
 
 func (ctx *AppContext) Inject(appFactory IComponentFactory) any {
-	return appFactory.build(ctx)
+	ctx.stateMu.RLock()
+	defer ctx.stateMu.RUnlock()
+
+	ctx.buildMu.Lock()
+	defer ctx.buildMu.Unlock()
+
+	return appFactory.build(ctx, &buildState{})
 }
 
 func (ctx *AppContext) GetComponent(typ Type, require ...bool) any {
+	ctx.stateMu.RLock()
+	defer ctx.stateMu.RUnlock()
+
+	ctx.buildMu.Lock()
+	defer ctx.buildMu.Unlock()
+
+	return ctx.getComponent(typ, required(require), &buildState{})
+}
+
+func (ctx *AppContext) getComponent(typ Type, require bool, state *buildState) any {
 	typeName := getTypeNameT(typ)
 
 	comps := ctx.components.ListByTypeName(typeName)
-	if len(comps) == 0 && required(require) {
+	if len(comps) == 0 && require {
 		panic(errComponentNotFound(typeName))
 	}
 
@@ -41,7 +81,7 @@ func (ctx *AppContext) GetComponent(typ Type, require ...bool) any {
 	)
 
 	for _, comp := range comps {
-		if !ctx.match(comp.factory.GetCondition()) {
+		if !ctx.active(comp.factory) {
 			continue
 		}
 
@@ -53,22 +93,26 @@ func (ctx *AppContext) GetComponent(typ Type, require ...bool) any {
 	}
 
 	if len(primaryMatches) == 1 {
-		return ctx.getInstance(primaryMatches[0])
+		return ctx.getInstance(primaryMatches[0], state)
 	}
 
 	if len(primaryMatches) > 1 {
-		panic(errMultiPrimaryMatch(typeName))
+		aliases := make([]string, 0, len(primaryMatches))
+		for _, match := range primaryMatches {
+			aliases = append(aliases, match.factory.GetAlias())
+		}
+		panic(errMultiPrimaryMatch(typeName, aliases))
 	}
 
 	if len(otherMatches) == 1 {
-		return ctx.getInstance(otherMatches[0])
+		return ctx.getInstance(otherMatches[0], state)
 	}
 
 	if len(otherMatches) > 1 {
 		panic(errMultiMatch)
 	}
 
-	if len(otherMatches) == 0 && required(require) {
+	if len(otherMatches) == 0 && require {
 		panic(errComponentNotFound(typeName))
 	}
 
@@ -76,15 +120,29 @@ func (ctx *AppContext) GetComponent(typ Type, require ...bool) any {
 }
 
 func (ctx *AppContext) GetComponentByName(name string, require ...bool) any {
+	ctx.stateMu.RLock()
+	defer ctx.stateMu.RUnlock()
+
+	ctx.buildMu.Lock()
+	defer ctx.buildMu.Unlock()
+
+	return ctx.getComponentByName(name, required(require), &buildState{})
+}
+
+func (ctx *AppContext) getComponentByName(name string, require bool, state *buildState) any {
 	comp := ctx.components.GetByAlias(name)
-	if comp == nil && required(require) {
-		panic(errComponentNotFound(name))
-	}
-	if comp == nil {
+	if comp == nil || !ctx.active(comp.factory) {
+		if require {
+			panic(errComponentNotFound(name))
+		}
 		return nil
 	}
 
-	return ctx.getInstance(comp)
+	return ctx.getInstance(comp, state)
+}
+
+func (ctx *AppContext) active(factory IComponentFactory) bool {
+	return ctx.match(factory.GetCondition())
 }
 
 func (ctx *AppContext) match(cond *Condition) bool {
@@ -101,20 +159,38 @@ func (ctx *AppContext) match(cond *Condition) bool {
 	return exist && cond.Value == s
 }
 
-func (ctx *AppContext) getInstance(component *ContainerNode) any {
+func (ctx *AppContext) getInstance(component *ContainerNode, state *buildState) (instance any) {
 	if component == nil {
 		return nil
 	}
 
-	if component.instance == nil {
-		if component.building {
-			panic(errCircularDependency(component.factory.GetAlias()))
-		}
-
-		component.building = true
-		component.instance = component.factory.build(ctx)
-		component.building = false
+	if component.err != nil {
+		panic(component.err)
 	}
 
+	if component.instance != nil {
+		return component.instance
+	}
+
+	state.enter(component)
+	defer func() {
+		state.leave(component)
+		if recovered := recover(); recovered != nil {
+			component.err = fmt.Errorf("failed building component [%s]: %v", component.factory.GetAlias(), recovered)
+			panic(component.err)
+		}
+	}()
+
+	component.instance = component.factory.build(ctx, state)
 	return component.instance
+}
+
+func (ctx *AppContext) register(factory IComponentFactory) {
+	switch factory.(type) {
+	case PropertyFactory, *PropertyFactory:
+		factory.onRegister(ctx)
+	default:
+		ctx.components.Register(factory)
+		factory.onRegister(ctx)
+	}
 }

@@ -1,6 +1,4 @@
-github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
-github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
+github.com/bytedance/gg v1.1.0 h1:FSKRxOZeN30w7h6snEbHxzgVMUV7+Xu4gc/Lz1cmBFw=
+github.com/bytedance/gg v1.1.0/go.mod h1:MeGhXyy5K20hNAU9GkMM51sXdm/lsqdU0CxwIiGvZpo=
 github.com/modern-go/reflect2 v1.0.2 h1:xBagoLtFs94CBntxluKeaWgTMpvLxC4ur3nMaC9Gz0M=
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
-github.com/non1996/go-jsonobj v0.0.27 h1:KflwQRSLFhPtT//2H9j7JTR3quqCEJrV9uzGAX+hBbs=
-github.com/non1996/go-jsonobj v0.0.27/go.mod h1:3gg4uf441sRS4wnmnnrLw7ZW90KSOlSX+Hqy9S36pbQ=

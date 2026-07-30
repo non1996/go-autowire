@@ -3,58 +3,81 @@ package internal
 import (
 	"fmt"
 	"reflect"
+	"sync"
 
-	"github.com/modern-go/reflect2"
-	util "github.com/non1996/go-jsonobj/utils"
+	"github.com/bytedance/gg/collection/tuple"
 )
 
 type propertyProvider struct {
 	scope    string
 	instance any
 	provide  func() any
+	once     sync.Once
 }
 
 type properties struct {
 	m      map[string]any // scope + "/" + key -> value
-	scopes map[string]propertyProvider
+	scopes map[string]*propertyProvider
+	mu     sync.RWMutex
 }
 
 func newProperties() properties {
 	return properties{
 		m:      map[string]any{},
-		scopes: map[string]propertyProvider{},
+		scopes: map[string]*propertyProvider{},
 	}
 }
 
-func (p *properties) add(provider propertyProvider) {
+func (p *properties) add(provider *propertyProvider) {
+	if provider == nil {
+		panic(fmt.Errorf("property provider is nil"))
+	}
+	if provider.scope == "" {
+		panic(fmt.Errorf("property scope is empty"))
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if _, exists := p.scopes[provider.scope]; exists {
+		panic(errPropertyDuplicate(provider.scope))
+	}
+
 	p.scopes[provider.scope] = provider
 }
 
-func (p *properties) set(scope, key string, value any) {
+func (p *properties) setLocked(scope, key string, value any) {
 	p.m[fmt.Sprintf("%s/%s", scope, key)] = value
 }
 
 func (p *properties) get(scope, key string) (any, bool) {
-	provider, exist := p.scopes[scope]
-	if !exist {
+	p.mu.RLock()
+	provider, exists := p.scopes[scope]
+	p.mu.RUnlock()
+	if !exists {
 		return nil, false
 	}
 
-	if reflect2.IsNil(provider.instance) {
-		provider.instance = provider.provide()
-		p.scopes[scope] = provider
-		kvs := objToKvPairs(provider.instance)
+	provider.once.Do(func() {
+		instance := provider.provide()
+		kvs := objToKvPairs(instance)
 
+		p.mu.Lock()
+		defer p.mu.Unlock()
+
+		provider.instance = instance
 		for _, kv := range kvs {
-			p.set(scope, kv.First, kv.Second)
+			p.setLocked(scope, kv.First, kv.Second)
 		}
-	}
+	})
 
-	value, exist := p.m[fmt.Sprintf("%s/%s", scope, key)]
-	return value, exist
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	value, exists := p.m[fmt.Sprintf("%s/%s", scope, key)]
+	return value, exists
 }
 
-func objToKvPairs(obj any) (res []util.Pair[string, any]) {
+func objToKvPairs(obj any) (res []tuple.T2[string, any]) {
 	v := deRefValue(reflect.ValueOf(obj))
 	if v.Kind() != reflect.Struct {
 		return nil
@@ -63,7 +86,7 @@ func objToKvPairs(obj any) (res []util.Pair[string, any]) {
 	return objToKvImpl("", v)
 }
 
-func objToKvImpl(prefix string, v reflect.Value) (res []util.Pair[string, any]) {
+func objToKvImpl(prefix string, v reflect.Value) (res []tuple.T2[string, any]) {
 	t := v.Type()
 
 	for i := 0; i < v.NumField(); i++ {
@@ -90,9 +113,9 @@ func objToKvImpl(prefix string, v reflect.Value) (res []util.Pair[string, any]) 
 			}
 		} else if validConfigFieldKind(fieldValue.Type().Kind()) {
 			if fieldType.Anonymous {
-				res = append(res, util.NewPair(joinKey(prefix, fieldValue.Type().Name()), fieldValue.Interface()))
+				res = append(res, tuple.Make2(joinKey(prefix, fieldValue.Type().Name()), fieldValue.Interface()))
 			} else {
-				res = append(res, util.NewPair(joinKey(prefix, fieldType.Name), fieldValue.Interface()))
+				res = append(res, tuple.Make2(joinKey(prefix, fieldType.Name), fieldValue.Interface()))
 			}
 		}
 	}

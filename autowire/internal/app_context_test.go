@@ -19,7 +19,7 @@ type loopComponent struct{}
 func TestPropertiesProviderCachesInstance(t *testing.T) {
 	props := newProperties()
 	count := 0
-	props.add(propertyProvider{
+	props.add(&propertyProvider{
 		scope: "feature",
 		provide: func() any {
 			count++
@@ -44,7 +44,7 @@ func TestPropertiesProviderCachesInstance(t *testing.T) {
 
 func TestGetComponentRespectsCondition(t *testing.T) {
 	ctx := NewAppContext()
-	ctx.properties.add(propertyProvider{
+	ctx.properties.add(&propertyProvider{
 		scope: "feature",
 		provide: func() any {
 			return featureToggle{Enabled: "true"}
@@ -132,5 +132,5 @@ func TestEnvironmentVariableErrorContainsVariableName(t *testing.T) {
 		}
 	}()
 
-	_ = envs.get("AUTOWIRE_TEST_MISSING_ENV", "", true)
+	_, _ = envs.get("AUTOWIRE_TEST_MISSING_ENV", "", true)
 }

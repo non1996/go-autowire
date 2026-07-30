@@ -12,7 +12,8 @@ type IComponentFactory interface {
 	GetImplement() []reflect.Type // 组件实现类型
 	IsPrimary() bool              // 同类型中是否是主要类型
 	GetCondition() *Condition     // 组件构造条件
-	build(ctx *AppContext) any    // 构造组件、依赖注入、后置初始化
+	onRegister(*AppContext)       // 注册完成后的派生产物处理
+	build(*AppContext, *buildState) any
 }
 
 // ConstructFunc 构造函数
@@ -37,6 +38,7 @@ type StructFactory struct {
 	FieldInjectors []Injector     // 依赖注入器
 	PostConstruct  ConstructFunc  // 构造函数
 	Beans          []BeanFactory  // 仅配置组件生效，产生bean
+	Properties     []PropertyFactory
 }
 
 func (f StructFactory) GetAlias() string {
@@ -59,12 +61,31 @@ func (f StructFactory) GetCondition() *Condition {
 	return f.Condition
 }
 
-func (f StructFactory) build(appCtx *AppContext) any {
+func (f StructFactory) onRegister(ctx *AppContext) {
+	if len(f.Beans) == 0 && len(f.Properties) == 0 {
+		return
+	}
+	if !f.Configuration {
+		panic(fmt.Errorf("component [%s] declares beans or properties but is not a configuration", f.Alias))
+	}
+	if !ctx.match(f.Condition) {
+		return
+	}
+
+	for index := range f.Properties {
+		ctx.register(&f.Properties[index])
+	}
+	for index := range f.Beans {
+		ctx.register(&f.Beans[index])
+	}
+}
+
+func (f StructFactory) build(appCtx *AppContext, state *buildState) any {
 	component := reflect.New(f.Type)
 
 	// 依赖注入
 	for _, fieldInjector := range f.FieldInjectors {
-		fieldInjector.inject(appCtx, component.Interface())
+		fieldInjector.inject(appCtx, state, component.Interface())
 	}
 
 	// 执行后置操作
@@ -86,6 +107,9 @@ type BeanFactory struct {
 	ComponentAlias string        // 依赖的配置组件的名称
 	Type           reflect.Type  // BuildFunc返回的实例类型，要求只能是结构体类型
 	BuildFunc      func(any) any // 构造bean组件
+	Primary        bool
+	Implement      []reflect.Type
+	Condition      *Condition
 }
 
 func (f BeanFactory) GetAlias() string {
@@ -97,43 +121,38 @@ func (f BeanFactory) GetType() reflect.Type {
 }
 
 func (f BeanFactory) GetImplement() []reflect.Type {
-	return nil
+	return f.Implement
 }
 
 func (f BeanFactory) IsPrimary() bool {
-	return false
-}
-
-func (f BeanFactory) isConfiguration() bool {
-	return false
+	return f.Primary
 }
 
 func (f BeanFactory) GetCondition() *Condition {
-	return nil
+	return f.Condition
 }
 
 func (f BeanFactory) onRegister(_ *AppContext) {
 }
 
-func (f BeanFactory) build(appCtx *AppContext) any {
-	comp := appCtx.GetComponentByName(f.ComponentAlias)
+func (f BeanFactory) build(appCtx *AppContext, state *buildState) any {
+	comp := appCtx.getComponentByName(f.ComponentAlias, true, state)
 	return f.BuildFunc(comp)
 }
 
 // PropertyFactory 参数工厂
 type PropertyFactory struct {
-	Alias          string
+	Scope          string
 	ComponentAlias string
-	Type           reflect.Type
 	BuildFunc      func(any) any
 }
 
 func (f PropertyFactory) GetAlias() string {
-	return fmt.Sprintf("_config/%s", f.Alias)
+	return fmt.Sprintf("_config/%s", f.Scope)
 }
 
 func (f PropertyFactory) GetType() reflect.Type {
-	return f.Type
+	return nil
 }
 
 func (f PropertyFactory) GetImplement() []reflect.Type {
@@ -148,11 +167,17 @@ func (f PropertyFactory) GetCondition() *Condition {
 	return nil
 }
 
-func (f PropertyFactory) onRegister(_ *AppContext) {
+func (f PropertyFactory) onRegister(ctx *AppContext) {
+	ctx.properties.add(&propertyProvider{
+		scope: f.Scope,
+		provide: func() any {
+			return f.build(ctx, &buildState{})
+		},
+	})
 }
 
-func (f PropertyFactory) build(appCtx *AppContext) any {
-	comp := appCtx.GetComponentByName(f.ComponentAlias)
+func (f PropertyFactory) build(appCtx *AppContext, state *buildState) any {
+	comp := appCtx.getComponentByName(f.ComponentAlias, true, state)
 	return f.BuildFunc(comp)
 }
 
@@ -162,9 +187,32 @@ type ApplicationFactory struct {
 	Injectors []Injector
 }
 
-func (a ApplicationFactory) build(appCtx *AppContext) any {
+func (a ApplicationFactory) GetAlias() string {
+	return "_application"
+}
+
+func (a ApplicationFactory) GetType() reflect.Type {
+	return reflect.TypeOf(a.App)
+}
+
+func (a ApplicationFactory) GetImplement() []reflect.Type {
+	return nil
+}
+
+func (a ApplicationFactory) IsPrimary() bool {
+	return false
+}
+
+func (a ApplicationFactory) GetCondition() *Condition {
+	return nil
+}
+
+func (a ApplicationFactory) onRegister(_ *AppContext) {
+}
+
+func (a ApplicationFactory) build(appCtx *AppContext, state *buildState) any {
 	for _, fieldInjector := range a.Injectors {
-		fieldInjector.inject(appCtx, a.App)
+		fieldInjector.inject(appCtx, state, a.App)
 	}
 
 	return a.App

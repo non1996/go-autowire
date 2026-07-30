@@ -8,8 +8,8 @@ var (
 	errMultiMatch = fmt.Errorf("multiple ComponentContainer meet filter GetCondition and no instance was designated as primary")
 )
 
-func errMultiPrimaryMatch(typeName string) error {
-	return fmt.Errorf("multiple primary instances [%s] found", typeName)
+func errMultiPrimaryMatch(typeName string, aliases []string) error {
+	return fmt.Errorf("multiple primary instances [%s] found: %v", typeName, aliases)
 }
 
 func errComponentNotFound(typeName string) error {
@@ -18,6 +18,10 @@ func errComponentNotFound(typeName string) error {
 
 func errComponentDuplicate(name string) error {
 	return fmt.Errorf("instance [%s] is duplicate", name)
+}
+
+func errPropertyDuplicate(scope string) error {
+	return fmt.Errorf("property scope [%s] is duplicate", scope)
 }
 
 func errValueNotFound(scope string, key string) error {

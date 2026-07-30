@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/bytedance/gg/gvalue"
 	"github.com/modern-go/reflect2"
-	"github.com/non1996/go-jsonobj/function"
 )
 
 type Type = reflect.Type
@@ -48,7 +48,7 @@ func Ternary[T any](cond bool, v1, v2 T) T {
 
 func Cast[T any](v any) T {
 	if reflect2.IsNil(v) {
-		return function.Zero[T]()
+		return gvalue.Zero[T]()
 	}
 
 	v2, ok := v.(T)

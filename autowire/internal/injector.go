@@ -7,7 +7,7 @@ import (
 // Injector 注入器
 // 注意：不管组件是以值类型注册还是以指针类型注册，泛型参数 C 都是组件的值类型
 type Injector interface {
-	inject(*AppContext, any)
+	inject(*AppContext, *buildState, any)
 }
 
 // ComponentInjector 组件注入器
@@ -21,43 +21,47 @@ type ComponentInjector struct {
 	DepType   reflect.Type
 }
 
-func (f ComponentInjector) inject(ctx *AppContext, comp any) {
+func (f ComponentInjector) inject(ctx *AppContext, state *buildState, comp any) {
 	var dep any
 	if f.Qualifier != "" {
-		dep = ctx.GetComponentByName(f.Qualifier, f.Required)
+		dep = ctx.getComponentByName(f.Qualifier, f.Required, state)
 	} else {
-		dep = ctx.GetComponent(f.DepType, f.Required)
+		dep = ctx.getComponent(f.DepType, f.Required, state)
 	}
 
 	f.InjectFn(comp, dep)
 }
 
 // ValueInjector 值注入器
-type ValueInjector[C any] struct {
+type ValueInjector struct {
 	Scope    string
 	Key      string
 	Required bool
-	InjectFn func(*C, any)
+	InjectFn func(any, any)
 }
 
-func (i ValueInjector[C]) inject(ctx *AppContext, comp any) {
+func (i ValueInjector) inject(ctx *AppContext, _ *buildState, comp any) {
 	value, exist := ctx.properties.get(i.Scope, i.Key)
 	if !exist && i.Required {
 		panic(errValueNotFound(i.Scope, i.Key))
 	}
 
-	i.InjectFn(comp.(*C), value)
+	i.InjectFn(comp, value)
 }
 
 // EnvInjector 环境变量注入器
-type EnvInjector[C any] struct {
+type EnvInjector struct {
 	Key          string
 	Required     bool
 	DefaultValue string
-	InjectFn     func(*C, string)
+	HasDefault   bool
+	InjectFn     func(any, string)
 }
 
-func (i EnvInjector[C]) inject(ctx *AppContext, comp any) {
-	ev := ctx.environmentVariables.get(i.Key, i.DefaultValue, i.Required)
-	i.InjectFn(comp.(*C), ev)
+func (i EnvInjector) inject(ctx *AppContext, _ *buildState, comp any) {
+	ev, exists := ctx.environmentVariables.get(i.Key, i.DefaultValue, i.Required && !i.HasDefault)
+	if !exists && !i.HasDefault {
+		return
+	}
+	i.InjectFn(comp, ev)
 }
