@@ -39,6 +39,7 @@ func NewAppContext() *AppContext {
 	}
 }
 
+// Register 注册组件factory
 func (ctx *AppContext) Register(factory IComponentFactory) any {
 	ctx.stateMu.Lock()
 	defer ctx.stateMu.Unlock()

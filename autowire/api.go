@@ -80,11 +80,6 @@ func GetComponentByNameFrom[T any](c *Container, name string, require ...bool) T
 	return util.Cast[T](component)
 }
 
-// Inject 使用默认容器为已有的结构体指针执行字段注入。
-func Inject(app any) {
-	defaultContext.Inject(app)
-}
-
 // Inject 为已有的结构体指针执行字段注入。
 func (c *Container) Inject(app any) {
 	if app == nil {
